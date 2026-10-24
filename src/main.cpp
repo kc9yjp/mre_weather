@@ -759,6 +759,21 @@ void handleTouch() {
   extendScreenTimeout();
   drawScreen();
 }
+
+// With the screen off nothing needs the CPU until the next refresh or a tap.
+// Light sleep keeps RAM and resumes in place; touch wakes it through the
+// AW9523 interrupt line.
+void sleepUntilRefreshOrTouch() {
+  const int32_t remainingMs = static_cast<int32_t>(nextRefreshAt - millis());
+  if (remainingMs <= 0) {
+    return;
+  }
+  M5.Power.lightSleep(static_cast<uint64_t>(remainingMs) * 1000ULL, true);
+  if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) {
+    wakeScreen();
+    ignoreTouchUntilRelease = true;
+  }
+}
 }  // namespace
 
 void setup() {
@@ -806,5 +821,9 @@ void loop() {
     refreshWeather();
   }
 
-  delay(30);
+  if (screenOn) {
+    delay(30);
+  } else {
+    sleepUntilRefreshOrTouch();
+  }
 }
