@@ -22,6 +22,10 @@ constexpr time_t kClockResyncSec = 6L * 60L * 60L;
 constexpr uint32_t kFastConnectTimeoutMs = 5000;
 constexpr uint32_t kFullConnectTimeoutMs = 15000;
 constexpr uint16_t kSetupHoldMs = 2000;
+// 80 MHz is the lowest clock Wi-Fi supports; refreshes run at full speed so
+// the TLS handshake finishes quickly and the radio can turn off sooner.
+constexpr uint32_t kIdleCpuMhz = 80;
+constexpr uint32_t kRefreshCpuMhz = 240;
 constexpr uint32_t kMaxScreenTimeoutSec = 3600;
 constexpr uint8_t kMinBrightness = 10;
 
@@ -628,6 +632,7 @@ void stopWifi() {
 }
 
 bool refreshWeather() {
+  setCpuFrequencyMhz(kRefreshCpuMhz);
   bool updated = false;
   if (!connectWifi()) {
     statusMessage = "Wi-Fi connect failed; retrying";
@@ -637,6 +642,7 @@ bool refreshWeather() {
     updated = fetchWeather();
   }
   stopWifi();
+  setCpuFrequencyMhz(kIdleCpuMhz);
   // Back off on repeated failures so an outage doesn't wake the radio every
   // minute.
   if (updated) {
@@ -802,7 +808,15 @@ void sleepUntilRefreshOrTouch() {
 
 void setup() {
   auto config = M5.config();
+  // Nothing here uses the Grove 5 V output, audio, IMU, or external RTC;
+  // leaving the boost converter off saves its quiescent draw.
+  config.output_power = false;
+  config.internal_spk = false;
+  config.internal_mic = false;
+  config.internal_imu = false;
+  config.internal_rtc = false;
   M5.begin(config);
+  setCpuFrequencyMhz(kIdleCpuMhz);
   M5.Display.setRotation(1);
   M5.Touch.setHoldThresh(kSetupHoldMs);
   if (!loadSettings()) {
