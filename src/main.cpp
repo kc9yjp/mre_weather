@@ -104,22 +104,28 @@ bool isAlpha(char value) {
   return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z');
 }
 
+// putString() returns the byte count written, so an empty value reads as 0
+// even on success; compare against the expected length instead.
+bool putText(const char* key, const String& value) {
+  return preferences.putString(key, value) == value.length();
+}
+
 bool saveSettings() {
-  return preferences.putString("apiKey", settings.apiKey) > 0 &&
-         preferences.putString("postal", settings.postalCode) > 0 &&
-         preferences.putString("country", settings.countryCode) > 0 &&
-         preferences.putString("units", settings.units) > 0 &&
-         preferences.putString("label", settings.locationLabel) > 0 &&
-         preferences.putString("latitude", settings.latitudeInput) > 0 &&
-         preferences.putString("longitude", settings.longitudeInput) > 0;
+  return putText("apiKey", settings.apiKey) &&
+         putText("postal", settings.postalCode) &&
+         putText("country", settings.countryCode) &&
+         putText("units", settings.units) &&
+         putText("label", settings.locationLabel) &&
+         putText("latitude", settings.latitudeInput) &&
+         putText("longitude", settings.longitudeInput);
 }
 
 bool saveReading() {
   return preferences.putFloat("temperature", reading.temperature) > 0 &&
          preferences.putInt("conditionId", reading.conditionId) > 0 &&
-         preferences.putString("description", reading.description) > 0 &&
-         preferences.putString("readingLocation", reading.location) > 0 &&
-         preferences.putString("readingUnits", reading.units) > 0 &&
+         putText("description", reading.description) &&
+         putText("readingLocation", reading.location) &&
+         putText("readingUnits", reading.units) &&
          preferences.putULong("updatedAt",
                               static_cast<uint32_t>(reading.updatedAt)) > 0 &&
          preferences.putBool("hasReading", reading.valid) > 0;
