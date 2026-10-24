@@ -34,6 +34,7 @@ struct Settings {
 
 struct Reading {
   float temperature = 0;
+  int conditionId = 800;
   String description;
   String location;
   String units;
@@ -65,6 +66,7 @@ bool loadSettings() {
   settings.cachedLongitude = preferences.getDouble("geoLon", 0);
 
   reading.temperature = preferences.getFloat("temperature", 0);
+  reading.conditionId = preferences.getInt("conditionId", 800);
   reading.description = preferences.getString("description", "");
   reading.location = preferences.getString("readingLocation", "");
   reading.units = preferences.getString("readingUnits", "");
@@ -114,6 +116,7 @@ bool saveSettings() {
 
 bool saveReading() {
   return preferences.putFloat("temperature", reading.temperature) > 0 &&
+         preferences.putInt("conditionId", reading.conditionId) > 0 &&
          preferences.putString("description", reading.description) > 0 &&
          preferences.putString("readingLocation", reading.location) > 0 &&
          preferences.putString("readingUnits", reading.units) > 0 &&
@@ -126,32 +129,130 @@ String temperatureUnit(const String& units) {
   return units == "metric" ? "C" : "F";
 }
 
+void drawSun(int centerX, int centerY, int radius, uint16_t color) {
+  M5.Display.fillCircle(centerX, centerY, radius, color);
+  for (int angle = 0; angle < 360; angle += 45) {
+    const float radians = angle * 0.0174533F;
+    const int innerX = centerX + static_cast<int>(cosf(radians) * (radius + 5));
+    const int innerY = centerY + static_cast<int>(sinf(radians) * (radius + 5));
+    const int outerX = centerX + static_cast<int>(cosf(radians) * (radius + 12));
+    const int outerY = centerY + static_cast<int>(sinf(radians) * (radius + 12));
+    M5.Display.drawLine(innerX, innerY, outerX, outerY, color);
+  }
+}
+
+void drawCloud(int x, int y, uint16_t color) {
+  M5.Display.fillCircle(x + 20, y + 30, 15, color);
+  M5.Display.fillCircle(x + 39, y + 20, 19, color);
+  M5.Display.fillCircle(x + 59, y + 31, 14, color);
+  M5.Display.fillRoundRect(x + 12, y + 29, 56, 22, 10, color);
+}
+
+void drawWeatherIcon(int conditionId, int x, int y) {
+  const bool partlyCloudy = conditionId == 801;
+  if (conditionId >= 700 && conditionId < 800) {
+    M5.Display.drawLine(x + 13, y + 20, x + 68, y + 20, TFT_LIGHTGREY);
+    M5.Display.drawLine(x + 7, y + 39, x + 61, y + 39, TFT_LIGHTGREY);
+    M5.Display.drawLine(x + 15, y + 58, x + 70, y + 58, TFT_LIGHTGREY);
+    return;
+  }
+  if (conditionId == 800 || partlyCloudy) {
+    drawSun(x + 42, y + 31, 19, TFT_YELLOW);
+    if (partlyCloudy) {
+      drawCloud(x + 3, y + 22, TFT_WHITE);
+    }
+    return;
+  }
+
+  const uint16_t cloudColor = TFT_LIGHTGREY;
+  drawCloud(x + 2, y + 4, cloudColor);
+  if (conditionId >= 200 && conditionId < 300) {
+    M5.Display.drawLine(x + 43, y + 48, x + 32, y + 66, TFT_YELLOW);
+    M5.Display.drawLine(x + 32, y + 66, x + 43, y + 66, TFT_YELLOW);
+    M5.Display.drawLine(x + 43, y + 66, x + 35, y + 78, TFT_YELLOW);
+  } else if ((conditionId >= 300 && conditionId < 600) ||
+             (conditionId >= 600 && conditionId < 700)) {
+    const uint16_t precipitationColor =
+        conditionId >= 600 ? TFT_WHITE : TFT_CYAN;
+    for (int dropX = x + 24; dropX <= x + 58; dropX += 17) {
+      if (conditionId >= 600) {
+        M5.Display.drawLine(dropX - 4, y + 62, dropX + 4, y + 70,
+                            precipitationColor);
+        M5.Display.drawLine(dropX + 4, y + 62, dropX - 4, y + 70,
+                            precipitationColor);
+        M5.Display.drawLine(dropX, y + 59, dropX, y + 73,
+                            precipitationColor);
+      } else {
+        M5.Display.drawLine(dropX + 3, y + 59, dropX - 3, y + 71,
+                            precipitationColor);
+      }
+    }
+  } else {
+    M5.Display.drawLine(x + 14, y + 61, x + 65, y + 61, TFT_LIGHTGREY);
+    M5.Display.drawLine(x + 21, y + 70, x + 58, y + 70, TFT_LIGHTGREY);
+    M5.Display.drawLine(x + 29, y + 79, x + 50, y + 79, TFT_LIGHTGREY);
+  }
+}
+
+void drawFittedText(const String& text, int x, int y, int maxWidth,
+                    int maxTextSize) {
+  M5.Display.setFont(nullptr);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  int textSize = maxTextSize;
+  M5.Display.setTextSize(textSize);
+  while (textSize > 1 && M5.Display.textWidth(text) > maxWidth) {
+    M5.Display.setTextSize(--textSize);
+  }
+  String visibleText = text;
+  while (visibleText.length() > 3 && M5.Display.textWidth(visibleText) > maxWidth) {
+    visibleText.remove(visibleText.length() - 1);
+  }
+  if (visibleText.length() < text.length() && visibleText.length() > 3) {
+    visibleText.remove(visibleText.length() - 3);
+    visibleText += "...";
+  }
+  M5.Display.setCursor(x, y);
+  M5.Display.print(visibleText);
+}
+
 void drawScreen() {
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextSize(2);
   M5.Display.setCursor(12, 10);
   M5.Display.print("WEATHER");
-  M5.Display.setTextSize(1);
-  M5.Display.setCursor(12, 38);
-  M5.Display.print(settings.locationLabel.length() ? settings.locationLabel
-                                                   : "Outdoor conditions");
+  drawFittedText(settings.locationLabel.length() ? settings.locationLabel
+                                                  : "Outdoor conditions",
+                 12, 34, M5.Display.width() - 24, 2);
 
   if (reading.valid) {
-    M5.Display.setTextSize(5);
-    M5.Display.setCursor(12, 68);
-    M5.Display.printf("%.1f", reading.temperature);
-    M5.Display.setTextSize(2);
-    M5.Display.printf(" %s", temperatureUnit(reading.units).c_str());
-
-    M5.Display.setTextSize(2);
+    char temperature[16];
+    snprintf(temperature, sizeof(temperature), "%.1f", reading.temperature);
+    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
+    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+    int temperatureSize = 3;
+    M5.Display.setTextSize(temperatureSize);
+    while (temperatureSize > 1 &&
+           M5.Display.textWidth(temperature) > M5.Display.width() - 58) {
+      M5.Display.setTextSize(--temperatureSize);
+    }
+    const int temperatureWidth = M5.Display.textWidth(temperature);
     M5.Display.setCursor(12, 137);
-    M5.Display.print(reading.description);
-    M5.Display.setTextSize(1);
-    M5.Display.setCursor(12, 170);
-    M5.Display.print(reading.location);
-    M5.Display.setCursor(12, 190);
+    M5.Display.print(temperature);
+    M5.Display.setFont(nullptr);
+    M5.Display.setTextSize(2);
+    const int unitX = 12 + temperatureWidth + 7;
+    M5.Display.setCursor(unitX + 8, 129);
+    M5.Display.print(temperatureUnit(reading.units));
+    M5.Display.drawCircle(unitX + 3, 115, 3, TFT_WHITE);
 
+    drawWeatherIcon(reading.conditionId, 12, 148);
+    drawFittedText(reading.description, 100, 159,
+                   M5.Display.width() - 112, 2);
+    drawFittedText(reading.location, 100, 185, M5.Display.width() - 112, 2);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    M5.Display.setCursor(100, 211);
     const time_t now = time(nullptr);
     if (reading.updatedAt > 0 && now >= reading.updatedAt) {
       const long minutes = static_cast<long>((now - reading.updatedAt) / 60);
@@ -163,14 +264,12 @@ void drawScreen() {
     M5.Display.setTextSize(2);
     M5.Display.setCursor(12, 86);
     M5.Display.print("No weather data yet");
-    M5.Display.setTextSize(1);
     M5.Display.setCursor(12, 122);
     M5.Display.print("Touch screen to configure");
   }
 
-  M5.Display.setTextSize(1);
-  M5.Display.setCursor(12, 215);
-  M5.Display.printf("%s  |  Tap to set up", statusMessage.c_str());
+  drawFittedText(statusMessage + "  |  Tap to set up", 12, 233,
+                 M5.Display.width() - 24, 1);
 }
 
 void showPortalCredentials(const String& apName, const String& apPassword) {
@@ -355,6 +454,7 @@ bool fetchWeather() {
   }
 
   reading.temperature = document["main"]["temp"].as<float>();
+  reading.conditionId = document["weather"][0]["id"].as<int>();
   reading.description = document["weather"][0]["description"].as<String>();
   reading.description.toLowerCase();
   reading.location = settings.locationLabel;

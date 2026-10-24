@@ -72,6 +72,7 @@ The device initiates all network connections. No inbound internet access, cloud 
 - Build environment: PlatformIO `cores3` target, ESP32 Arduino framework, M5Unified, WiFiManager, and ArduinoJson.
 - Setup opens automatically when no working Wi-Fi connection is available; a touchscreen press reopens it later.
 - The portal provides ZIP/postal code plus country code, or coordinates if the postal-code field is cleared.
+- The display uses an oversized temperature, a condition-specific weather icon, and larger supporting text.
 - Weather refreshes every 10 minutes after success and retries after one minute on failure.
 - A trusted Sectigo R46 root certificate is bundled for HTTPS validation. Monitor OpenWeather's certificate chain and update the trust anchor if it changes.
 - The captive portal is password-protected but uses local HTTP; provisioning should be done in a trusted, private location.

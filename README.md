@@ -4,7 +4,7 @@ A small weather display for an M5Stack CoreS3 SE. It connects directly to Wi-Fi 
 
 ## Planned behavior
 
-- Show the current temperature, a short condition description, and the last successful update time.
+- Show a very large current temperature, a large weather-condition icon, a readable condition description, and the last successful update time.
 - Let the owner configure Wi-Fi, OpenWeather API key, location, and units through an on-device setup portal.
 - Refresh weather periodically and show the last known result if a request fails.
 - Keep setup and recovery possible without a computer or a separately hosted service.
@@ -16,7 +16,7 @@ A small weather display for an M5Stack CoreS3 SE. It connects directly to Wi-Fi 
 - **Network setup:** WiFiManager captive portal hosted by the device.
 - **Weather source:** OpenWeather Geocoding and Current Weather APIs over HTTPS.
 
-M5Unified lists CoreS3 SE support. The project is an initial firmware implementation; build and test it on the target device before relying on it.
+M5Unified lists CoreS3 SE support. The current display emphasizes the temperature across the upper half of the screen, with a large condition icon and larger condition, location, and update text below it.
 
 ## Build and flash
 
@@ -77,7 +77,7 @@ No server is needed, but the API key and saved Wi-Fi credentials must be stored 
 
 ## Project status
 
-Firmware now includes device-hosted Wi-Fi/weather setup, ZIP-code geocoding (with coordinate fallback), and current conditions display. On-device validation and further reliability testing remain. See [PLAN.md](./PLAN.md) for implementation details and remaining checks.
+Firmware now includes device-hosted Wi-Fi/weather setup, ZIP-code geocoding (with coordinate fallback), and a large-text current-conditions display. On-device validation and further readability tuning remain. See [PLAN.md](./PLAN.md) for implementation details and remaining checks.
 
 ## References
 
