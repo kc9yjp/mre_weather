@@ -75,7 +75,7 @@ The device initiates all network connections. No inbound internet access, cloud 
 - Weather refreshes every 10 minutes after success and retries after one minute on failure.
 - A trusted Sectigo R46 root certificate is bundled for HTTPS validation. Monitor OpenWeather's certificate chain and update the trust anchor if it changes.
 - The captive portal is password-protected but uses local HTTP; provisioning should be done in a trusted, private location.
-- Firmware compiles successfully with PlatformIO; it has not yet been exercised on physical hardware.
+- Firmware compiles successfully and has been flashed to the connected CoreS3; the flash contents were hash-verified. The setup screen, portal flow, and live weather request still need on-device confirmation.
 
 ## Risks and open checks
 
