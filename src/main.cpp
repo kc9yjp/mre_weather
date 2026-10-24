@@ -17,6 +17,8 @@ constexpr char kWeatherHost[] = "api.openweathermap.org";
 constexpr uint32_t kRefreshIntervalMs = 10UL * 60UL * 1000UL;
 constexpr uint32_t kRetryIntervalMs = 60UL * 1000UL;
 constexpr time_t kValidEpoch = 1700000000;
+constexpr uint32_t kFastConnectTimeoutMs = 5000;
+constexpr uint32_t kFullConnectTimeoutMs = 15000;
 constexpr uint16_t kSetupHoldMs = 2000;
 constexpr uint32_t kMaxScreenTimeoutSec = 3600;
 constexpr uint8_t kMinBrightness = 10;
@@ -47,8 +49,19 @@ struct Reading {
   bool valid = false;
 };
 
+// The last successful association. Reconnecting with a known channel and
+// BSSID skips the scan, which is most of the connect time.
+struct AccessPoint {
+  String ssid;
+  String password;
+  uint8_t bssid[6] = {};
+  int32_t channel = 0;
+  bool valid = false;
+};
+
 Settings settings;
 Reading reading;
+AccessPoint lastAccessPoint;
 Preferences preferences;
 uint32_t nextRefreshAt = 0;
 uint32_t nextClockRedrawAt = 0;
@@ -546,6 +559,73 @@ bool syncClock() {
   return time(nullptr) >= kValidEpoch;
 }
 
+bool waitForWifi(uint32_t timeoutMs) {
+  const uint32_t startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         static_cast<uint32_t>(millis() - startedAt) < timeoutMs) {
+    delay(100);
+  }
+  return WiFi.status() == WL_CONNECTED;
+}
+
+void rememberAccessPoint() {
+  lastAccessPoint.ssid = WiFi.SSID();
+  lastAccessPoint.password = WiFi.psk();
+  memcpy(lastAccessPoint.bssid, WiFi.BSSID(), sizeof(lastAccessPoint.bssid));
+  lastAccessPoint.channel = WiFi.channel();
+  lastAccessPoint.valid = lastAccessPoint.ssid.length() > 0;
+}
+
+bool connectWifi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return true;
+  }
+  // WiFiManager already saved the credentials; don't rewrite flash on every
+  // reconnect.
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  if (lastAccessPoint.valid) {
+    WiFi.begin(lastAccessPoint.ssid.c_str(), lastAccessPoint.password.c_str(),
+               lastAccessPoint.channel, lastAccessPoint.bssid);
+    if (waitForWifi(kFastConnectTimeoutMs)) {
+      return true;
+    }
+    // The router may have changed channel; fall back to a full scan.
+    WiFi.disconnect();
+    WiFi.begin(lastAccessPoint.ssid.c_str(), lastAccessPoint.password.c_str());
+  } else {
+    WiFi.begin();
+  }
+  if (!waitForWifi(kFullConnectTimeoutMs)) {
+    return false;
+  }
+  rememberAccessPoint();
+  return true;
+}
+
+// The radio idles at tens of milliamps while associated, so keep it off
+// between refreshes.
+void stopWifi() {
+  WiFi.persistent(false);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+}
+
+bool refreshWeather() {
+  bool updated = false;
+  if (!connectWifi()) {
+    statusMessage = "Wi-Fi connect failed; retrying";
+  } else if (time(nullptr) < kValidEpoch && !syncClock()) {
+    statusMessage = "Time sync failed; retrying";
+  } else {
+    updated = fetchWeather();
+  }
+  stopWifi();
+  nextRefreshAt = millis() + (updated ? kRefreshIntervalMs : kRetryIntervalMs);
+  drawScreen();
+  return updated;
+}
+
 bool runPortal(bool forcePortal) {
   const String suffix = WiFi.macAddress().substring(12);
   const String apName = "Weather-" + suffix;
@@ -642,10 +722,12 @@ bool runPortal(bool forcePortal) {
       statusMessage = "Could not save settings";
       return false;
     }
+    rememberAccessPoint();
     statusMessage = "Wi-Fi connected";
     return true;
   }
 
+  stopWifi();
   statusMessage = "Setup timed out; retrying";
   return false;
 }
@@ -670,10 +752,7 @@ void handleTouch() {
     return;
   }
   if (runPortal(true)) {
-    if (syncClock()) {
-      fetchWeather();
-    }
-    nextRefreshAt = millis() + kRefreshIntervalMs;
+    refreshWeather();
   } else {
     nextRefreshAt = millis() + kRetryIntervalMs;
   }
@@ -707,13 +786,7 @@ void setup() {
     return;
   }
 
-  if (syncClock()) {
-    fetchWeather();
-  } else {
-    statusMessage = "Time sync failed; check Wi-Fi";
-  }
-  nextRefreshAt = millis() +
-                  (reading.valid ? kRefreshIntervalMs : kRetryIntervalMs);
+  refreshWeather();
   extendScreenTimeout();
   drawScreen();
 }
@@ -730,25 +803,7 @@ void loop() {
   }
 
   if (static_cast<int32_t>(millis() - nextRefreshAt) >= 0) {
-    if (WiFi.status() != WL_CONNECTED) {
-      WiFi.reconnect();
-      const uint32_t reconnectStartedAt = millis();
-      while (WiFi.status() != WL_CONNECTED &&
-             static_cast<uint32_t>(millis() - reconnectStartedAt) < 10000) {
-        delay(250);
-      }
-    }
-    bool clockReady = time(nullptr) >= kValidEpoch;
-    if (WiFi.status() == WL_CONNECTED && !clockReady) {
-      clockReady = syncClock();
-    }
-    const bool updated = clockReady && fetchWeather();
-    if (!clockReady) {
-      statusMessage = "Time sync failed; retrying";
-    }
-    nextRefreshAt =
-        millis() + (updated ? kRefreshIntervalMs : kRetryIntervalMs);
-    drawScreen();
+    refreshWeather();
   }
 
   delay(30);

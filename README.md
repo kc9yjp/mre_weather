@@ -48,7 +48,7 @@ If setup times out or Wi-Fi cannot connect, hold the display or reboot the devic
 
 ## Screen and battery
 
-On battery, the screen turns off after the configured timeout (default 30 seconds); tap it to wake. The screen stays on while USB power is connected. Set the timeout to `0` in setup to keep the screen on, and lower the brightness (10–255, default 128) to extend battery life.
+Wi-Fi is switched off between refreshes and reconnects using the last known channel and access point, falling back to a full scan if that fails. On battery, the screen turns off after the configured timeout (default 30 seconds); tap it to wake. The screen stays on while USB power is connected. Set the timeout to `0` in setup to keep the screen on, and lower the brightness (10–255, default 128) to extend battery life.
 
 ## Location and units
 
