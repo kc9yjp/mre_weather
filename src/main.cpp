@@ -17,6 +17,9 @@ constexpr char kWeatherHost[] = "api.openweathermap.org";
 constexpr uint32_t kRefreshIntervalMs = 10UL * 60UL * 1000UL;
 constexpr uint32_t kRetryIntervalMs = 60UL * 1000UL;
 constexpr time_t kValidEpoch = 1700000000;
+constexpr uint16_t kSetupHoldMs = 2000;
+constexpr uint32_t kMaxScreenTimeoutSec = 3600;
+constexpr uint8_t kMinBrightness = 10;
 
 struct Settings {
   String apiKey;
@@ -30,6 +33,8 @@ struct Settings {
   String geoCountryCode;
   double cachedLatitude = 0;
   double cachedLongitude = 0;
+  uint32_t screenTimeoutSec = 30;  // 0 keeps the screen on
+  uint8_t brightness = 128;
 };
 
 struct Reading {
@@ -47,6 +52,9 @@ Reading reading;
 Preferences preferences;
 uint32_t nextRefreshAt = 0;
 uint32_t nextClockRedrawAt = 0;
+uint32_t screenOffAt = 0;
+bool screenOn = true;
+bool ignoreTouchUntilRelease = false;
 String statusMessage = "Starting";
 
 bool loadSettings() {
@@ -64,6 +72,8 @@ bool loadSettings() {
   settings.geoCountryCode = preferences.getString("geoCountry", "");
   settings.cachedLatitude = preferences.getDouble("geoLat", 0);
   settings.cachedLongitude = preferences.getDouble("geoLon", 0);
+  settings.screenTimeoutSec = preferences.getUInt("screenTimeout", 30);
+  settings.brightness = preferences.getUChar("brightness", 128);
 
   reading.temperature = preferences.getFloat("temperature", 0);
   reading.conditionId = preferences.getInt("conditionId", 800);
@@ -117,7 +127,9 @@ bool saveSettings() {
          putText("units", settings.units) &&
          putText("label", settings.locationLabel) &&
          putText("latitude", settings.latitudeInput) &&
-         putText("longitude", settings.longitudeInput);
+         putText("longitude", settings.longitudeInput) &&
+         preferences.putUInt("screenTimeout", settings.screenTimeoutSec) > 0 &&
+         preferences.putUChar("brightness", settings.brightness) > 0;
 }
 
 bool saveReading() {
@@ -222,6 +234,9 @@ void drawFittedText(const String& text, int x, int y, int maxWidth,
 }
 
 void drawScreen() {
+  if (!screenOn) {
+    return;
+  }
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextSize(2);
@@ -275,11 +290,53 @@ void drawScreen() {
     M5.Display.setCursor(12, 86);
     M5.Display.print("No weather data yet");
     M5.Display.setCursor(12, 122);
-    M5.Display.print("Touch screen to configure");
+    M5.Display.print("Hold screen to configure");
   }
 
-  drawFittedText(statusMessage + "  |  Tap to set up", 12, 233,
+  drawFittedText(statusMessage + "  |  Hold to set up", 12, 233,
                  M5.Display.width() - 24, 1);
+}
+
+bool onExternalPower() { return M5.Power.Axp2101.isVBUS(); }
+
+void extendScreenTimeout() {
+  screenOffAt = millis() + settings.screenTimeoutSec * 1000UL;
+}
+
+void wakeScreen() {
+  extendScreenTimeout();
+  if (screenOn) {
+    return;
+  }
+  screenOn = true;
+  M5.Display.wakeup();
+  M5.Display.setBrightness(settings.brightness);
+  drawScreen();
+  nextClockRedrawAt = millis() + 60000UL;
+}
+
+void sleepScreen() {
+  if (!screenOn) {
+    return;
+  }
+  screenOn = false;
+  M5.Display.setBrightness(0);
+  M5.Display.sleep();
+}
+
+// The backlight is the largest power draw, so blank it after the timeout
+// unless the owner disabled the timeout or USB power is present.
+void maybeSleepScreen() {
+  if (!screenOn) {
+    return;
+  }
+  if (settings.screenTimeoutSec == 0 || onExternalPower()) {
+    extendScreenTimeout();
+    return;
+  }
+  if (static_cast<int32_t>(millis() - screenOffAt) >= 0) {
+    sleepScreen();
+  }
 }
 
 void showPortalCredentials(const String& apName, const String& apPassword) {
@@ -493,6 +550,7 @@ bool runPortal(bool forcePortal) {
   const String suffix = WiFi.macAddress().substring(12);
   const String apName = "Weather-" + suffix;
   const String apPassword = makeApPassword();
+  wakeScreen();
   showPortalCredentials(apName, apPassword);
 
   WiFiManager portal;
@@ -507,6 +565,8 @@ bool runPortal(bool forcePortal) {
   char locationLabel[49];
   char latitude[20];
   char longitude[20];
+  char screenTimeout[8];
+  char brightness[8];
   snprintf(apiKey, sizeof(apiKey), "%s", settings.apiKey.c_str());
   snprintf(postalCode, sizeof(postalCode), "%s", settings.postalCode.c_str());
   snprintf(countryCode, sizeof(countryCode), "%s",
@@ -517,6 +577,9 @@ bool runPortal(bool forcePortal) {
   snprintf(latitude, sizeof(latitude), "%s", settings.latitudeInput.c_str());
   snprintf(longitude, sizeof(longitude), "%s",
            settings.longitudeInput.c_str());
+  snprintf(screenTimeout, sizeof(screenTimeout), "%lu",
+           static_cast<unsigned long>(settings.screenTimeoutSec));
+  snprintf(brightness, sizeof(brightness), "%u", settings.brightness);
 
   WiFiManagerParameter apiKeyParameter("apiKey", "OpenWeather API key", apiKey,
                                        sizeof(apiKey) - 1);
@@ -535,6 +598,12 @@ bool runPortal(bool forcePortal) {
   WiFiManagerParameter longitudeParameter(
       "longitude", "Longitude (use if not using ZIP/postal code)", longitude,
       sizeof(longitude) - 1);
+  WiFiManagerParameter screenTimeoutParameter(
+      "screenTimeout", "Screen off after seconds on battery (0 = always on)",
+      screenTimeout, sizeof(screenTimeout) - 1);
+  WiFiManagerParameter brightnessParameter(
+      "brightness", "Screen brightness (10-255)", brightness,
+      sizeof(brightness) - 1);
   portal.addParameter(&apiKeyParameter);
   portal.addParameter(&postalParameter);
   portal.addParameter(&countryParameter);
@@ -542,6 +611,8 @@ bool runPortal(bool forcePortal) {
   portal.addParameter(&labelParameter);
   portal.addParameter(&latitudeParameter);
   portal.addParameter(&longitudeParameter);
+  portal.addParameter(&screenTimeoutParameter);
+  portal.addParameter(&brightnessParameter);
 
   const bool connected = forcePortal
                              ? portal.startConfigPortal(apName.c_str(),
@@ -558,6 +629,15 @@ bool runPortal(bool forcePortal) {
     settings.locationLabel = cleanField(labelParameter.getValue());
     settings.latitudeInput = cleanField(latitudeParameter.getValue());
     settings.longitudeInput = cleanField(longitudeParameter.getValue());
+    // Out-of-range entries are clamped rather than rejected so setup still
+    // completes.
+    settings.screenTimeoutSec = static_cast<uint32_t>(
+        min(strtoul(screenTimeoutParameter.getValue(), nullptr, 10),
+            static_cast<unsigned long>(kMaxScreenTimeoutSec)));
+    settings.brightness = static_cast<uint8_t>(constrain(
+        strtol(brightnessParameter.getValue(), nullptr, 10),
+        static_cast<long>(kMinBrightness), 255L));
+    M5.Display.setBrightness(settings.brightness);
     if (!saveSettings()) {
       statusMessage = "Could not save settings";
       return false;
@@ -570,12 +650,23 @@ bool runPortal(bool forcePortal) {
   return false;
 }
 
-void maybeOpenSetupPortal() {
+// A tap wakes a blank screen; holding opens setup. The touch that woke the
+// screen is ignored until release so it cannot also start the portal.
+void handleTouch() {
   if (M5.Touch.getCount() == 0) {
+    ignoreTouchUntilRelease = false;
     return;
   }
   const auto touch = M5.Touch.getDetail(0);
-  if (!touch.wasPressed()) {
+  if (!screenOn) {
+    if (touch.wasPressed()) {
+      wakeScreen();
+      ignoreTouchUntilRelease = true;
+    }
+    return;
+  }
+  extendScreenTimeout();
+  if (ignoreTouchUntilRelease || !touch.wasHold()) {
     return;
   }
   if (runPortal(true)) {
@@ -586,6 +677,7 @@ void maybeOpenSetupPortal() {
   } else {
     nextRefreshAt = millis() + kRetryIntervalMs;
   }
+  extendScreenTimeout();
   drawScreen();
 }
 }  // namespace
@@ -594,19 +686,23 @@ void setup() {
   auto config = M5.config();
   M5.begin(config);
   M5.Display.setRotation(1);
-  M5.Display.setBrightness(128);
+  M5.Touch.setHoldThresh(kSetupHoldMs);
   if (!loadSettings()) {
+    M5.Display.setBrightness(128);
     statusMessage = "Settings storage unavailable";
     drawScreen();
     while (true) {
       delay(1000);
     }
   }
+  M5.Display.setBrightness(settings.brightness);
+  extendScreenTimeout();
 
   statusMessage = "Connecting to Wi-Fi";
   drawScreen();
   if (!runPortal(false)) {
     nextRefreshAt = millis() + kRetryIntervalMs;
+    extendScreenTimeout();
     drawScreen();
     return;
   }
@@ -618,12 +714,14 @@ void setup() {
   }
   nextRefreshAt = millis() +
                   (reading.valid ? kRefreshIntervalMs : kRetryIntervalMs);
+  extendScreenTimeout();
   drawScreen();
 }
 
 void loop() {
   M5.update();
-  maybeOpenSetupPortal();
+  handleTouch();
+  maybeSleepScreen();
 
   if (reading.valid &&
       static_cast<int32_t>(millis() - nextClockRedrawAt) >= 0) {

@@ -42,9 +42,13 @@ pio device monitor --baud 115200
 3. Connect a phone or computer to that network and follow the captive-portal prompt. If it does not appear automatically, open `http://192.168.4.1`.
 4. Enter home Wi-Fi credentials, API key, location, and units. Use either ZIP/postal code and country code, or coordinates; clear the ZIP/postal field to use coordinates.
 5. Save and allow the device to connect. It then resolves the location if needed and fetches current conditions.
-6. Tap the touchscreen to reopen setup later. The setup network is temporary and closes after five minutes.
+6. Hold a finger on the touchscreen for two seconds to reopen setup later. The setup network is temporary and closes after five minutes.
 
-If setup times out or Wi-Fi cannot connect, tap the display or reboot the device to retry setup.
+If setup times out or Wi-Fi cannot connect, hold the display or reboot the device to retry setup.
+
+## Screen and battery
+
+On battery, the screen turns off after the configured timeout (default 30 seconds); tap it to wake. The screen stays on while USB power is connected. Set the timeout to `0` in setup to keep the screen on, and lower the brightness (10–255, default 128) to extend battery life.
 
 ## Location and units
 
