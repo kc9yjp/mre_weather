@@ -226,33 +226,37 @@ void drawScreen() {
                  12, 34, M5.Display.width() - 24, 2);
 
   if (reading.valid) {
+    // Temperature and icon share the band below the header; the text lines
+    // get the full width underneath so nothing overlaps.
+    constexpr int kTemperatureTop = 60;
+    constexpr int kIconWidth = 80;
+    const int iconX = M5.Display.width() - kIconWidth - 12;
+    const int maxTemperatureWidth = iconX - 12 - 30;
+
     char temperature[16];
     snprintf(temperature, sizeof(temperature), "%.1f", reading.temperature);
-    M5.Display.setFont(&fonts::FreeSansBold24pt7b);
     M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    int temperatureSize = 3;
-    M5.Display.setTextSize(temperatureSize);
-    while (temperatureSize > 1 &&
-           M5.Display.textWidth(temperature) > M5.Display.width() - 58) {
-      M5.Display.setTextSize(--temperatureSize);
+    M5.Display.setTextSize(1);
+    M5.Display.setFont(&fonts::Font8);
+    if (M5.Display.textWidth(temperature) > maxTemperatureWidth) {
+      M5.Display.setFont(&fonts::Font7);
     }
     const int temperatureWidth = M5.Display.textWidth(temperature);
-    M5.Display.setCursor(12, 137);
+    M5.Display.setCursor(12, kTemperatureTop);
     M5.Display.print(temperature);
     M5.Display.setFont(nullptr);
     M5.Display.setTextSize(2);
-    const int unitX = 12 + temperatureWidth + 7;
-    M5.Display.setCursor(unitX + 8, 129);
+    const int unitX = 12 + temperatureWidth + 6;
+    M5.Display.drawCircle(unitX + 3, kTemperatureTop + 4, 3, TFT_WHITE);
+    M5.Display.setCursor(unitX + 10, kTemperatureTop);
     M5.Display.print(temperatureUnit(reading.units));
-    M5.Display.drawCircle(unitX + 3, 115, 3, TFT_WHITE);
 
-    drawWeatherIcon(reading.conditionId, 12, 148);
-    drawFittedText(reading.description, 100, 159,
-                   M5.Display.width() - 112, 2);
-    drawFittedText(reading.location, 100, 185, M5.Display.width() - 112, 2);
+    drawWeatherIcon(reading.conditionId, iconX, kTemperatureTop - 4);
+    drawFittedText(reading.description, 12, 148, M5.Display.width() - 24, 2);
+    drawFittedText(reading.location, 12, 174, M5.Display.width() - 24, 2);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    M5.Display.setCursor(100, 211);
+    M5.Display.setCursor(12, 200);
     const time_t now = time(nullptr);
     if (reading.updatedAt > 0 && now >= reading.updatedAt) {
       const long minutes = static_cast<long>((now - reading.updatedAt) / 60);
