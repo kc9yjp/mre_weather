@@ -52,7 +52,7 @@ The device initiates all network connections. No inbound internet access, cloud 
    - Keep the last good reading across transient request failures and, if feasible, device restarts.
 5. **Harden and verify**
    - Verify HTTPS certificate validation and ensure TLS time setup is reliable.
-   - Add bounded retries/backoff and a conservative refresh period compatible with API limits (10 minutes after success; one minute after failure).
+   - Add bounded retries/backoff and a conservative refresh period compatible with API limits (20 minutes after success; retries back off from one minute, doubling up to 20 minutes).
    - Test setup, restart/reconnect, invalid credentials, API errors, offline operation, and both unit modes.
    - Document flashing, first-time setup, recovery, and API-key replacement.
 
@@ -73,7 +73,7 @@ The device initiates all network connections. No inbound internet access, cloud 
 - Setup opens automatically when no working Wi-Fi connection is available; a touchscreen press reopens it later.
 - The portal provides ZIP/postal code plus country code, or coordinates if the postal-code field is cleared.
 - The display uses an oversized temperature, a condition-specific weather icon, and larger supporting text.
-- Weather refreshes every 10 minutes after success and retries after one minute on failure.
+- Weather refreshes every 20 minutes after success; failed refreshes retry after one minute, doubling up to 20 minutes.
 - A trusted Sectigo R46 root certificate is bundled for HTTPS validation. Monitor OpenWeather's certificate chain and update the trust anchor if it changes.
 - The captive portal is password-protected but uses local HTTP; provisioning should be done in a trusted, private location.
 - Firmware compiles successfully and has been flashed to the connected CoreS3; the flash contents were hash-verified. The setup screen, portal flow, and live weather request still need on-device confirmation.

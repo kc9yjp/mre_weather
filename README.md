@@ -75,7 +75,7 @@ No server is needed, but the API key and saved Wi-Fi credentials must be stored 
 ## Reliability and privacy
 
 - Fetch only the selected location; do not request GPS or collect user data.
-- Refresh every 10 minutes initially, with a one-minute retry after errors, to avoid excessive requests.
+- Refresh every 20 minutes. After an error, retry after one minute, doubling the wait on each further failure up to 20 minutes.
 - Retain the last successful reading and its timestamp so temporary network/API failures do not leave the screen blank.
 - Report connection, API, and configuration errors on-screen without exposing credentials.
 

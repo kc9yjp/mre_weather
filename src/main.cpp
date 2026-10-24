@@ -8,15 +8,17 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
+#include <esp_sntp.h>
 #include <time.h>
 
 #include "sectigo_root_r46.h"
 
 namespace {
 constexpr char kWeatherHost[] = "api.openweathermap.org";
-constexpr uint32_t kRefreshIntervalMs = 10UL * 60UL * 1000UL;
+constexpr uint32_t kRefreshIntervalMs = 20UL * 60UL * 1000UL;
 constexpr uint32_t kRetryIntervalMs = 60UL * 1000UL;
 constexpr time_t kValidEpoch = 1700000000;
+constexpr time_t kClockResyncSec = 6L * 60L * 60L;
 constexpr uint32_t kFastConnectTimeoutMs = 5000;
 constexpr uint32_t kFullConnectTimeoutMs = 15000;
 constexpr uint16_t kSetupHoldMs = 2000;
@@ -64,7 +66,9 @@ Reading reading;
 AccessPoint lastAccessPoint;
 Preferences preferences;
 uint32_t nextRefreshAt = 0;
+uint32_t retryDelayMs = kRetryIntervalMs;
 uint32_t nextClockRedrawAt = 0;
+time_t lastClockSyncAt = 0;
 uint32_t screenOffAt = 0;
 bool screenOn = true;
 bool ignoreTouchUntilRelease = false;
@@ -548,13 +552,25 @@ bool fetchWeather() {
   return true;
 }
 
+// With Wi-Fi mostly off, SNTP's background updates rarely run, so resync
+// explicitly every few hours to correct drift accumulated during sleep.
+bool clockNeedsSync() {
+  const time_t now = time(nullptr);
+  return now < kValidEpoch || now - lastClockSyncAt >= kClockResyncSec;
+}
+
+// Returns true when the clock is usable, even if this resync failed.
 bool syncClock() {
+  sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   const uint32_t startedAt = millis();
-  while (time(nullptr) < kValidEpoch &&
+  while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED &&
          static_cast<uint32_t>(millis() - startedAt) < 20000) {
     delay(250);
     M5.update();
+  }
+  if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+    lastClockSyncAt = time(nullptr);
   }
   return time(nullptr) >= kValidEpoch;
 }
@@ -615,13 +631,21 @@ bool refreshWeather() {
   bool updated = false;
   if (!connectWifi()) {
     statusMessage = "Wi-Fi connect failed; retrying";
-  } else if (time(nullptr) < kValidEpoch && !syncClock()) {
+  } else if (clockNeedsSync() && !syncClock()) {
     statusMessage = "Time sync failed; retrying";
   } else {
     updated = fetchWeather();
   }
   stopWifi();
-  nextRefreshAt = millis() + (updated ? kRefreshIntervalMs : kRetryIntervalMs);
+  // Back off on repeated failures so an outage doesn't wake the radio every
+  // minute.
+  if (updated) {
+    retryDelayMs = kRetryIntervalMs;
+    nextRefreshAt = millis() + kRefreshIntervalMs;
+  } else {
+    nextRefreshAt = millis() + retryDelayMs;
+    retryDelayMs = min(retryDelayMs * 2, kRefreshIntervalMs);
+  }
   drawScreen();
   return updated;
 }
