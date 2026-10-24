@@ -254,6 +254,43 @@ void drawFittedText(const String& text, int x, int y, int maxWidth,
   M5.Display.print(visibleText);
 }
 
+// Battery gauge at the top right of the header: a percentage beside a small
+// battery outline, cyan while charging.
+void drawBatteryStatus() {
+  constexpr int kBodyWidth = 24;
+  constexpr int kBodyHeight = 14;
+  constexpr int kTop = 10;
+  const int bodyX = M5.Display.width() - 12 - kBodyWidth - 3;
+  M5.Display.setFont(nullptr);
+  M5.Display.setTextSize(2);
+  if (!M5.Power.Axp2101.getBatState()) {
+    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    M5.Display.setCursor(M5.Display.width() - 12 - M5.Display.textWidth("USB"),
+                         kTop);
+    M5.Display.print("USB");
+    return;
+  }
+
+  const int level = constrain(M5.Power.getBatteryLevel(), 0, 100);
+  const bool charging = M5.Power.isCharging() == m5::Power_Class::is_charging;
+  const uint16_t color = charging      ? TFT_CYAN
+                         : level > 40  ? TFT_GREEN
+                         : level > 15  ? TFT_YELLOW
+                                       : TFT_RED;
+  M5.Display.drawRect(bodyX, kTop, kBodyWidth, kBodyHeight, TFT_WHITE);
+  M5.Display.fillRect(bodyX + kBodyWidth, kTop + 4, 3, kBodyHeight - 8,
+                      TFT_WHITE);
+  const int fillWidth = (kBodyWidth - 4) * level / 100;
+  M5.Display.fillRect(bodyX + 2, kTop + 2, fillWidth, kBodyHeight - 4, color);
+
+  char percent[5];
+  snprintf(percent, sizeof(percent), "%d%%", level);
+  M5.Display.setTextColor(color, TFT_BLACK);
+  M5.Display.setCursor(bodyX - 6 - M5.Display.textWidth(percent), kTop);
+  M5.Display.print(percent);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+}
+
 void drawScreen() {
   if (!screenOn) {
     return;
@@ -263,6 +300,7 @@ void drawScreen() {
   M5.Display.setTextSize(2);
   M5.Display.setCursor(12, 10);
   M5.Display.print("WEATHER");
+  drawBatteryStatus();
   drawFittedText(settings.locationLabel.length() ? settings.locationLabel
                                                   : "Outdoor conditions",
                  12, 34, M5.Display.width() - 24, 2);
